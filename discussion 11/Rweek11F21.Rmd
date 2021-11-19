@@ -1,0 +1,140 @@
+---
+title: "Discussion 11"
+author: "Greg Kirwin"
+date: "11/19/2021"
+output: beamer_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,tidy.opts=list(width.cutoff=45),tidy=T) # allow text wrapping
+options(readr.num_columns = 0)
+options(xtable.comment = FALSE)
+library(formatR)
+def.chunk.hook  <- knitr::knit_hooks$get("chunk")
+knitr::knit_hooks$set(chunk = function(x, options) {
+  x <- def.chunk.hook(x, options)
+  ifelse(options$size != "normalsize", paste0("\\", options$size,"\n\n", x, "\n\n \\normalsize"), x)
+})
+
+library(data.table)
+library(randomForest)
+library(dplyr)
+```
+
+## Reminders
+
+- Hw4 due November 23 (Next Tuesday)
+  - Use caching from last week to your advantage since these models may take time to run
+  - Spec 2 seems to be the one that takes a while to run; you can decrease the epochs and loops to make it computationally feasible
+- No discussion next week (Thanksgiving break)
+
+Email:
+
+- gjkirwin@wisc.edu
+
+Office Hours:
+
+- Tuesdays and Thursdays at 7pm Central (UTC-6:00) -> Note that the clocks have changed!!
+- Fridays at 9am Central
+
+- **Next week (11/23-27) will only have a Tuesday OH**
+
+## Today
+
+- Random Forests
+
+## Setup
+
+Data come from the [mushroom data <!>](https://archive.ics.uci.edu/ml/datasets/mushroom) at UCI. I picked this dataset because it's classification-based. However, it requires a decent amount of data cleaning. If you would like to try using the raw data yourself, I'll include a link in the slides to a GitHub repo where you can do it on your own.
+
+```{r data, echo=T, size = "tiny"}
+shroom <- fread("mushrooms.csv", header = T)
+test <- sample.int(nrow(shroom), size = nrow(shroom)*.2, replace = F)
+
+# will try to predict habitat
+ytrain <- as.factor(shroom$habitat[-test])
+ytest <- as.factor(shroom$habitat[test])
+
+xtrain <- subset(shroom[-test], select = -c(habitat))
+xtest <- subset(shroom[test], select = -c(habitat))
+
+# need to have data as factor, not just char
+xtrain <- xtrain %>% mutate_if(is.character, as.factor)
+xtest <- xtest %>% mutate_if(is.character, as.factor)
+```
+
+## some notes
+
+It seems that the `randomForest` function requires some specific data setup to be feasible. It appears we need to have either completely numerical data (as you will for the assignment) or categorical data with particular numbers of classes to use- it showed me warnings when I had less than 5, or gave an error with more than 50. 
+
+## Estimation
+
+A little example [here <!>](https://www.r-bloggers.com/2018/01/how-to-implement-random-forests-in-r/)
+
+```{r rf, echo=T, size = "small"}
+forest = randomForest(x=xtrain,y=ytrain,
+                  xtest=xtest,ytest=ytest,
+                  ntree=1000,mtry=4, importance = T)
+forest2 = randomForest(x=xtrain,y=ytrain,
+                  ntree=1000,mtry=4, importance = T)
+```
+
+## Evaluation
+
+This data is a little different from the airline or simulated data from hw4, because it's all factor. These data are *ordinal*, meaning that the value 0, 1, 2, etc. don't have true meaning. We can't assign "urban" the value 5, for example, because there is no meaningful difference "urban" and "woods" when given a number.
+
+## Evaluation contd.
+
+So instead, I come up with a measure of accuracy by just testing to see whether the predicted value is equivalent to the true value, giving it a "1" if correct, and "0" else. The mean of this vector is then my test accuracy. I played around with the `mtry` argument and found that increasing the number (randomly sampled variables at each step) was actually detrimental past about 3 or 4. The "rule of thumb" given in the text says $sqrt(ncol(x))$ is approximately best, which would be between 4 and 5, since I have 22 predictors.
+
+```{r rftest, echo=T, size = "tiny"}
+# we can get accuracy by using a 1-0 measure of correctness on each row's value
+pred <- ifelse(forest$test$predicted == ytest, 1, 0)
+mean(pred)
+im <- importance(forest)
+# MeanDecreaseAccuracy shows decrease in accuracy when variable is excluded
+im[,8] 
+```
+
+## Evaluation contd.
+
+Here, I show some output on the different classes and overall accuracy of our forest. The `caret` library is needed to use the function below.
+
+```{r conf, echo = T, size = "tiny"}
+# testing out the caret library
+suppressMessages(library(caret))
+confusionMatrix(forest$test$predicted, ytest)
+```
+
+## More Evaluation
+
+Try excluding some variables and see how the overall accuracy changes.
+
+```{r rf2, echo = T, eval = F}
+xtrain2 <- subset(xtrain, select = -c(capshape, veiltype))
+xtest2 <- subset(xtest, select = -c(capshape, veiltype))
+
+forest2 = randomForest(x=xtrain2,y=ytrain,
+                  xtest=xtest2,ytest=ytest,
+                  ntree=2000,mtry=4, importance = T)
+confusionMatrix(forest2$test$predicted, ytest)
+```
+
+## In Hw4
+
+In the homework, the data should be *cardinal* (regular numbers), so you should still be able to calculate MSE the original way, using something like `forest_error = mean((ytest - forest$test$predicted)^2)`.
+
+With factor data, I believe the function is only able to computationally handle around 50 classes, and it gives a warning if you have fewer than 4 or 5 classes. I found that the function is a little touchy for both the predictors and predicted variables.
+
+## h2o version
+
+If you're interested in using `h2o` instead, try running the demo for its `randomForest` command to see a quick demo of this package at work. You may need to run it form the Help viewer in RStudio, as it gave me an error for some reason when running it directly.
+
+```{r h2o, eval = F, echo = T}
+# http://127.0.0.1:35498/help/library/h2o/Demo/h2o.randomForest
+#demo(h2o::h2o.randomForest) # may need to select it from the help window
+```
+
+
+
+
